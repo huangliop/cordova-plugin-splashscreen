@@ -27,6 +27,7 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Handler;
+import android.net.Uri;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
@@ -39,12 +40,14 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
+import android.widget.Button;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
 import org.json.JSONArray;
 import org.json.JSONException;
+import java.io.File;
 
 public class SplashScreen extends CordovaPlugin {
     private static final String LOG_TAG = "SplashScreen";
@@ -286,7 +289,14 @@ public class SplashScreen extends CordovaPlugin {
 
                 // Use an ImageView to render the image because of its flexible scaling options.
                 splashImageView = new ImageView(context);
-                splashImageView.setImageResource(drawableId);
+                   //如果该目录存在广告图片，则将启动页替换为该广告图
+                Uri imageUri=Uri.parse(context.getCacheDir()+"/ads/ad.jpg");
+                File imageFile=new File(String.valueOf(imageUri));
+                if(imageFile.exists()){
+                    splashImageView.setImageURI(imageUri);
+                }else {
+                    splashImageView.setImageResource(drawableId);
+                }
                 LayoutParams layoutParams = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
                 splashImageView.setLayoutParams(layoutParams);
 
@@ -313,7 +323,12 @@ public class SplashScreen extends CordovaPlugin {
                     splashDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
                             WindowManager.LayoutParams.FLAG_FULLSCREEN);
                 }
-                splashDialog.setContentView(splashImageView);
+				if(imageFile.exists()){
+                    RelativeLayout relativeLayout=makeParentView(splashImageView);
+                    splashDialog.setContentView(relativeLayout);
+                }else {
+                    splashDialog.setContentView(splashImageView);
+                }
                 splashDialog.setCancelable(false);
                 splashDialog.show();
 
@@ -334,6 +349,35 @@ public class SplashScreen extends CordovaPlugin {
                 }
             }
         });
+    }
+    /**
+     * 创建广告图片的父容器
+     * @return RelativeLayout
+     */
+    private RelativeLayout makeParentView(View view){
+        RelativeLayout relativeLayout=new RelativeLayout(cordova.getActivity());
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT);
+        relativeLayout.setLayoutParams(params);
+
+        relativeLayout.addView(view);
+        addSkipBtn(relativeLayout);
+        return relativeLayout;
+    }
+
+    /**
+     * 添加跳过按钮
+     * @param layout
+     * @return
+     */
+    private void addSkipBtn(RelativeLayout layout){
+        Button btn=new Button(cordova.getActivity());
+        RelativeLayout.LayoutParams params=new RelativeLayout.LayoutParams(LayoutParams.WRAP_CONTENT,LayoutParams.WRAP_CONTENT);
+        params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+
+        btn.setPadding(10,10,10,10);
+        btn.setText("跳过");
+        btn.setBackgroundColor(Color.TRANSPARENT);
+        layout.addView(btn,params);
     }
 
     // Show only spinner in the center of the screen

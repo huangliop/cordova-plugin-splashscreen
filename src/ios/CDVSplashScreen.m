@@ -331,8 +331,18 @@
 
     if (![imageName isEqualToString:_curImageName])
     {
-        UIImage* img = [UIImage imageNamed:imageName];
-        _imageView.image = img;
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
+        NSString *path = [[paths objectAtIndex:0] stringByAppendingString:@"/ads/ad.jpg"];
+        BOOL isExist= [[NSFileManager defaultManager] fileExistsAtPath:path];
+        //检测广告图片文件是否存在
+        UIImage* img ;
+        if(isExist){
+            img=[[UIImage alloc] init];
+            img=[UIImage imageWithContentsOfFile:path];
+			[self addSkipBtn];
+        }else{
+            img=[UIImage imageNamed:imageName];
+        } 
         _curImageName = imageName;
     }
 
@@ -346,7 +356,16 @@
         NSLog(@"WARNING: The splashscreen image named %@ was not found", imageName);
     }
 }
-
+//添加跳过按钮
+-(void)addSkipBtn
+{
+    CGRect frame = CGRectMake(self.viewController.view.frame.size.width-30,20 , 80, 40);
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    button.frame = frame;
+    [button setTitle:@"跳过" forState: UIControlStateNormal];
+    [button.layer setBackgroundColor:[UIColor colorWithWhite:0.0 alpha:0.0].CGColor];
+    [_imageView addSubview:button];
+}
 - (void)updateBounds
 {
     if ([self isUsingCDVLaunchScreen]) {
