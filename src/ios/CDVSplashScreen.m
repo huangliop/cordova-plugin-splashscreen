@@ -23,8 +23,13 @@
 #import "CDVViewController+SplashScreen.h"
 
 #define kSplashScreenDurationDefault 3000.0f
-#define kFadeDurationDefault 500.0f
 
+
+
+UIButton* _skipBtn;
+UILabel* _countdown;
+int secondsLeft;
+NSTimer* _timer;
 
 @implementation CDVSplashScreen
 
@@ -42,7 +47,7 @@
 
 - (void)hide:(CDVInvokedUrlCommand*)command
 {
-    [self setVisible:NO andForce:YES];
+    [self setVisible:NO];
 }
 
 - (void)pageDidLoad
@@ -77,7 +82,7 @@
     BOOL autorotateValue = (device.iPad || device.iPhone6Plus) ?
         [(CDVViewController *)self.viewController shouldAutorotateDefaultValue] :
         NO;
-
+    
     [(CDVViewController *)self.viewController setEnabledAutorotation:autorotateValue];
 
     NSString* topActivityIndicator = [self.commandDelegate.settings objectForKey:[@"TopActivityIndicator" lowercaseString]];
@@ -114,56 +119,73 @@
     {
         [parentView addSubview:_activityView];
     }
-
+    // Set skip button
+    CGRect frame = CGRectMake([UIScreen mainScreen].bounds.size.width-70,20 , 60, 40);
+    _skipBtn = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    _skipBtn.frame = frame;
+    [_skipBtn setTitle:@"跳过" forState: UIControlStateNormal];
+    [_skipBtn.layer setBackgroundColor:[UIColor colorWithWhite:0.0 alpha:0.0].CGColor];
+    [_skipBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    
+    [_skipBtn addTarget:self action:@selector(hideViews) forControlEvents:UIControlEventTouchUpInside];
+    [_skipBtn setAlpha:0];
+    [parentView setUserInteractionEnabled:YES];
+    [parentView addSubview:_skipBtn];
+    
+    
+    //Set countdown Lable
+    CGRect countdownFrame=CGRectMake(10,20, 40, 40);
+    _countdown=[[UILabel alloc] initWithFrame:countdownFrame];
+    _countdown.textColor=[UIColor whiteColor];
+    [_countdown setAlpha:0];
+    [parentView addSubview:_countdown];
+    
     // Frame is required when launching in portrait mode.
     // Bounds for landscape since it captures the rotation.
     [parentView addObserver:self forKeyPath:@"frame" options:0 context:nil];
     [parentView addObserver:self forKeyPath:@"bounds" options:0 context:nil];
-
+    
     [self updateImage];
-    _destroyed = NO;
 }
 
 - (void)hideViews
 {
     [_imageView setAlpha:0];
     [_activityView setAlpha:0];
+    [_skipBtn setAlpha:0];
+    [_countdown setAlpha:0];
 }
 
 - (void)destroyViews
 {
-    _destroyed = YES;
     [(CDVViewController *)self.viewController setEnabledAutorotation:[(CDVViewController *)self.viewController shouldAutorotateDefaultValue]];
 
     [_imageView removeFromSuperview];
     [_activityView removeFromSuperview];
+    [_skipBtn removeFromSuperview];
+    [_countdown removeFromSuperview];
+    
     _imageView = nil;
     _activityView = nil;
     _curImageName = nil;
+    _skipBtn=nil;
+    _countdown=nil;
 
     self.viewController.view.userInteractionEnabled = YES;  // re-enable user interaction upon completion
-    @try {
-        [self.viewController.view removeObserver:self forKeyPath:@"frame"];
-        [self.viewController.view removeObserver:self forKeyPath:@"bounds"];
-    }
-    @catch (NSException *exception) {
-        // When reloading the page from a remotely connected Safari, there
-        // are no observers, so the removeObserver method throws an exception,
-        // that we can safely ignore.
-        // Alternatively we can check whether there are observers before calling removeObserver
-    }
+    [self.viewController.view removeObserver:self forKeyPath:@"frame"];
+    [self.viewController.view removeObserver:self forKeyPath:@"bounds"];
 }
 
 - (CDV_iOSDevice) getCurrentDevice
 {
     CDV_iOSDevice device;
-
+    
     UIScreen* mainScreen = [UIScreen mainScreen];
     CGFloat mainScreenHeight = mainScreen.bounds.size.height;
     CGFloat mainScreenWidth = mainScreen.bounds.size.width;
-
+    
     int limit = MAX(mainScreenHeight,mainScreenWidth);
-
+    
     device.iPad = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
     device.iPhone = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone);
     device.retina = ([mainScreen scale] == 2.0);
@@ -174,38 +196,23 @@
     // this is appropriate for detecting the runtime screen environment
     device.iPhone6 = (device.iPhone && limit == 667.0);
     device.iPhone6Plus = (device.iPhone && limit == 736.0);
-
+    
     return device;
-}
-
-- (BOOL) isUsingCDVLaunchScreen {
-    NSString* launchStoryboardName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"UILaunchStoryboardName"];
-    if (launchStoryboardName) {
-        return ([launchStoryboardName isEqualToString:@"CDVLaunchScreen"]);
-    } else {
-        return NO;
-    }
 }
 
 - (NSString*)getImageName:(UIInterfaceOrientation)currentOrientation delegate:(id<CDVScreenOrientationDelegate>)orientationDelegate device:(CDV_iOSDevice)device
 {
     // Use UILaunchImageFile if specified in plist.  Otherwise, use Default.
     NSString* imageName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"UILaunchImageFile"];
-
-    // detect if we are using CB-9762 Launch Storyboard; if so, return the associated image instead
-    if ([self isUsingCDVLaunchScreen]) {
-        imageName = @"LaunchStoryboard";
-        return imageName;
-    }
-
+    
     NSUInteger supportedOrientations = [orientationDelegate supportedInterfaceOrientations];
-
+    
     // Checks to see if the developer has locked the orientation to use only one of Portrait or Landscape
     BOOL supportsLandscape = (supportedOrientations & UIInterfaceOrientationMaskLandscape);
     BOOL supportsPortrait = (supportedOrientations & UIInterfaceOrientationMaskPortrait || supportedOrientations & UIInterfaceOrientationMaskPortraitUpsideDown);
     // this means there are no mixed orientations in there
     BOOL isOrientationLocked = !(supportsPortrait && supportsLandscape);
-
+    
     if (imageName)
     {
         imageName = [imageName stringByDeletingPathExtension];
@@ -274,7 +281,7 @@
                 case UIInterfaceOrientationLandscapeRight:
                     imageName = [imageName stringByAppendingString:@"-Landscape"];
                     break;
-
+                    
                 case UIInterfaceOrientationPortrait:
                 case UIInterfaceOrientationPortraitUpsideDown:
                 default:
@@ -283,7 +290,7 @@
             }
         }
     }
-
+    
     return imageName;
 }
 
@@ -332,17 +339,46 @@
     if (![imageName isEqualToString:_curImageName])
     {
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
-        NSString *path = [[paths objectAtIndex:0] stringByAppendingString:@"/ads/ad.jpg"];
+        NSString *path = [[paths objectAtIndex:0] stringByAppendingString:@"/ads"];
+        NSString *imageName=@"ad.jp";
+        NSArray *directory=[[NSFileManager defaultManager] contentsOfDirectoryAtPath:path error:NULL];
+        BOOL available=true;
+        if(directory!=nil&&[directory count]>0){
+            imageName=[directory objectAtIndex:directory.count-1];
+            NSArray *ss=[imageName componentsSeparatedByString:@"_"];
+            //设置显示时长
+            if(sizeof(ss)>3) {
+                int draction=[[[[ss objectAtIndex:3] componentsSeparatedByString:@"."] objectAtIndex:0] intValue];
+                if(draction>0){
+                    [self.commandDelegate.settings setValue:[[NSString alloc]initWithFormat:@"%d",draction*1000] forKey:[@"SplashScreenDelay" lowercaseString]];
+                }else{
+                    draction=[[self.commandDelegate.settings objectForKey: [@"SplashScreenDelay" lowercaseString]] floatValue]/1000;
+                }
+                secondsLeft=draction;
+            }
+            //检测是否在有效期内
+            available=[self isAvailable:[[ss objectAtIndex:1] doubleValue] endTime:[[ss objectAtIndex:2] doubleValue]];
+            
+        }
+        path=[[path stringByAppendingString:@"/"] stringByAppendingString:imageName];
+        [self checkFile:path];
         BOOL isExist= [[NSFileManager defaultManager] fileExistsAtPath:path];
         //检测广告图片文件是否存在
         UIImage* img ;
-        if(isExist){
+        if(isExist&&available){
             img=[[UIImage alloc] init];
             img=[UIImage imageWithContentsOfFile:path];
-			[self addSkipBtn];
+            [_skipBtn setAlpha:1];
+            [_countdown setAlpha:1]; 
+            //开始倒计时
+            if(_timer==nil) {
+                _countdown.text=[[NSString stringWithFormat:@"%d",secondsLeft] stringByAppendingString:@"s"];
+                _timer= [NSTimer scheduledTimerWithTimeInterval:1.0f target:self selector:@selector(updateCounter:) userInfo:nil repeats:YES];
+            }
         }else{
             img=[UIImage imageNamed:imageName];
-        } 
+        }
+        _imageView.image = img;	
         _curImageName = imageName;
     }
 
@@ -356,26 +392,36 @@
         NSLog(@"WARNING: The splashscreen image named %@ was not found", imageName);
     }
 }
-//添加跳过按钮
--(void)addSkipBtn
+//检测广告是否在有效期内
+-(BOOL) isAvailable:(double)start endTime:(double) end
 {
-    CGRect frame = CGRectMake(self.viewController.view.frame.size.width-30,20 , 80, 40);
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeRoundedRect];
-    button.frame = frame;
-    [button setTitle:@"跳过" forState: UIControlStateNormal];
-    [button.layer setBackgroundColor:[UIColor colorWithWhite:0.0 alpha:0.0].CGColor];
-    [_imageView addSubview:button];
+    NSDate *now=[[NSDate alloc]init];
+    double nowTime=[now timeIntervalSince1970]*1000;
+    if(nowTime<end&&nowTime>start)return true;
+    return false;
 }
+-(void)updateCounter:(NSTimer*) timer
+{
+    if(secondsLeft>0){
+        secondsLeft--;
+        _countdown.text=[[NSString stringWithFormat:@"%d",secondsLeft] stringByAppendingString:@"s"];
+    }else{
+        [timer invalidate];
+        secondsLeft=0;
+        _timer=nil;
+    }
+}
+//检测文件的大小，如果过小就删除该文件
+-(void)checkFile:(NSString*)path
+{
+    NSDictionary* fileD=[[NSFileManager defaultManager] fileAttributesAtPath:path traverseLink:YES];
+    if([fileD fileSize]<1000){
+        [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+    }
+}
+
 - (void)updateBounds
 {
-    if ([self isUsingCDVLaunchScreen]) {
-        // CB-9762's launch screen expects the image to fill the screen and be scaled using AspectFill.
-        CGSize viewportSize = [UIApplication sharedApplication].delegate.window.bounds.size;
-        _imageView.frame = CGRectMake(0, 0, viewportSize.width, viewportSize.height);
-        _imageView.contentMode = UIViewContentModeScaleAspectFill;
-        return; 
-    }
-
     UIImage* img = _imageView.image;
     CGRect imgBounds = (img) ? CGRectMake(0, 0, img.size.width, img.size.height) : CGRectZero;
 
@@ -429,19 +475,14 @@
 
 - (void)setVisible:(BOOL)visible
 {
-    [self setVisible:visible andForce:NO];
-}
-
-- (void)setVisible:(BOOL)visible andForce:(BOOL)force
-{
-    if (visible != _visible || force)
+    if (visible != _visible)
     {
         _visible = visible;
 
         id fadeSplashScreenValue = [self.commandDelegate.settings objectForKey:[@"FadeSplashScreen" lowercaseString]];
         id fadeSplashScreenDuration = [self.commandDelegate.settings objectForKey:[@"FadeSplashScreenDuration" lowercaseString]];
 
-        float fadeDuration = fadeSplashScreenDuration == nil ? kFadeDurationDefault : [fadeSplashScreenDuration floatValue];
+        float fadeDuration = fadeSplashScreenDuration == nil ? kSplashScreenDurationDefault : [fadeSplashScreenDuration floatValue];
 
         id splashDurationString = [self.commandDelegate.settings objectForKey: [@"SplashScreenDelay" lowercaseString]];
         float splashDuration = splashDurationString == nil ? kSplashScreenDurationDefault : [splashDurationString floatValue];
@@ -491,32 +532,26 @@
             __weak __typeof(self) weakSelf = self;
             float effectiveSplashDuration;
 
-            // [CB-10562] AutoHideSplashScreen may be "true" but we should still be able to hide the splashscreen manually.
-            if (!autoHideSplashScreen || force) {
+            if (!autoHideSplashScreen) {
                 effectiveSplashDuration = (fadeDuration) / 1000;
             } else {
                 effectiveSplashDuration = (splashDuration - fadeDuration) / 1000;
             }
 
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (uint64_t) effectiveSplashDuration * NSEC_PER_SEC), dispatch_get_main_queue(), CFBridgingRelease(CFBridgingRetain(^(void) {
-                if (!_destroyed) {
-                    [UIView transitionWithView:self.viewController.view
-                                    duration:(fadeDuration / 1000)
-                                    options:UIViewAnimationOptionTransitionNone
-                                    animations:^(void) {
-                                        [weakSelf hideViews];
-                                    }
-                                    completion:^(BOOL finished) {
-                                        // Always destroy views, otherwise you could have an
-                                        // invisible splashscreen that is overlayed over your active views
-                                        // which causes that no touch events are passed
-                                        if (!_destroyed) {
-                                            [weakSelf destroyViews];
-                                            // TODO: It might also be nice to have a js event happen here -jm
-                                        }
-                                    }
+                   [UIView transitionWithView:self.viewController.view
+                                   duration:(fadeDuration / 1000)
+                                   options:UIViewAnimationOptionTransitionNone
+                                   animations:^(void) {
+                                       [weakSelf hideViews];
+                                   }
+                                   completion:^(BOOL finished) {
+                                       if (finished) {
+                                           [weakSelf destroyViews];
+                                           // TODO: It might also be nice to have a js event happen here -jm
+                                       }
+                                     }
                     ];
-                }
             })));
         }
     }
