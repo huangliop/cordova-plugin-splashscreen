@@ -24,10 +24,14 @@ import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
-import android.os.Handler;
 import android.net.Uri;
+import android.os.CountDownTimer;
+import android.os.Handler;
+import android.util.Log;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
@@ -36,18 +40,21 @@ import android.view.WindowManager;
 import android.view.animation.Animation;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.DecelerateInterpolator;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
-import android.widget.Button;
+import android.widget.TextView;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
 import org.json.JSONArray;
 import org.json.JSONException;
+
 import java.io.File;
+import java.util.Date;
 
 public class SplashScreen extends CordovaPlugin {
     private static final String LOG_TAG = "SplashScreen";
@@ -55,7 +62,6 @@ public class SplashScreen extends CordovaPlugin {
     // Enable functionality only if running on 4.x.x.
     private static final boolean HAS_BUILT_IN_SPLASH_SCREEN = Integer.valueOf(CordovaWebView.CORDOVA_VERSION.split("\\.")[0]) < 4;
     private static final int DEFAULT_SPLASHSCREEN_DURATION = 3000;
-    private static final int DEFAULT_FADE_DURATION = 500;
     private static Dialog splashDialog;
     private static ProgressDialog spinnerDialog;
     private static boolean firstShow = true;
@@ -86,13 +92,7 @@ public class SplashScreen extends CordovaPlugin {
             return;
         }
         // Make WebView invisible while loading URL
-        // CB-11326 Ensure we're calling this on UI thread
-        cordova.getActivity().runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                getView().setVisibility(View.INVISIBLE);
-            }
-        });
+        getView().setVisibility(View.INVISIBLE);
         int drawableId = preferences.getInteger("SplashDrawableId", 0);
         if (drawableId == 0) {
             String splashResource = preferences.getString("SplashScreen", "screen");
@@ -127,7 +127,7 @@ public class SplashScreen extends CordovaPlugin {
 
     private int getFadeDuration () {
         int fadeSplashScreenDuration = preferences.getBoolean("FadeSplashScreen", true) ?
-            preferences.getInteger("FadeSplashScreenDuration", DEFAULT_FADE_DURATION) : 0;
+            preferences.getInteger("FadeSplashScreenDuration", DEFAULT_SPLASHSCREEN_DURATION) : 0;
 
         if (fadeSplashScreenDuration < 30) {
             // [CB-9750] This value used to be in decimal seconds, so we will assume that if someone specifies 10
@@ -268,8 +268,26 @@ public class SplashScreen extends CordovaPlugin {
         final int splashscreenTime = preferences.getInteger("SplashScreenDelay", DEFAULT_SPLASHSCREEN_DURATION);
         final int drawableId = preferences.getInteger("SplashDrawableId", 0);
 
+        File adsPath=new File(webView.getContext().getCacheDir()+"/ads");
+        String imageName="ad.jpg";
+        int adDuration=0;
+        //获取ads目录下的第一个文件
+        if(adsPath.listFiles()!=null&&adsPath.listFiles().length!=0){
+            //获取广告图片的名称
+            imageName=adsPath.listFiles()[adsPath.listFiles().length-1].getName();
+            Log.d(LOG_TAG,"get file :"+imageName);
+            try {
+                //获取广告图片持续时间
+                adDuration=Integer.parseInt(imageName.split("_|\\.")[3])*1000;
+            } catch (Exception e) {
+                adDuration=0;
+            }
+        }
+        //图片是否在有效期内
+        final boolean available=isAvailable(imageName);
+        if(!available)adDuration=0;//如果图片不在有效期内，就恢复之前显示时长
         final int fadeSplashScreenDuration = getFadeDuration();
-        final int effectiveSplashDuration = Math.max(0, splashscreenTime - fadeSplashScreenDuration);
+        final int effectiveSplashDuration = Math.max(adDuration, splashscreenTime - fadeSplashScreenDuration);
 
         lastHideAfterDelay = hideAfterDelay;
 
@@ -281,18 +299,21 @@ public class SplashScreen extends CordovaPlugin {
             return;
         }
 
+        //如果该目录存在广告图片，则将启动页替换为该广告图
+        final Uri imageUri=Uri.parse(webView.getContext().getCacheDir()+"/ads/"+imageName);
+
         cordova.getActivity().runOnUiThread(new Runnable() {
             public void run() {
                 // Get reference to display
                 Display display = cordova.getActivity().getWindowManager().getDefaultDisplay();
                 Context context = webView.getContext();
 
+                splashImageView = new ImageView(webView.getContext());
                 // Use an ImageView to render the image because of its flexible scaling options.
-                splashImageView = new ImageView(context);
-                   //如果该目录存在广告图片，则将启动页替换为该广告图
-                Uri imageUri=Uri.parse(context.getCacheDir()+"/ads/ad.jpg");
+
                 File imageFile=new File(String.valueOf(imageUri));
-                if(imageFile.exists()){
+                if(imageFile.length()<1000)imageFile.delete();
+                if(imageFile.exists()&&available){
                     splashImageView.setImageURI(imageUri);
                 }else {
                     splashImageView.setImageResource(drawableId);
@@ -323,9 +344,10 @@ public class SplashScreen extends CordovaPlugin {
                     splashDialog.getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
                             WindowManager.LayoutParams.FLAG_FULLSCREEN);
                 }
-				if(imageFile.exists()){
+                if(imageFile.exists()){
                     RelativeLayout relativeLayout=makeParentView(splashImageView);
                     splashDialog.setContentView(relativeLayout);
+                    makeSeconds(relativeLayout,effectiveSplashDuration/1000);
                 }else {
                     splashDialog.setContentView(splashImageView);
                 }
@@ -350,6 +372,7 @@ public class SplashScreen extends CordovaPlugin {
             }
         });
     }
+
     /**
      * 创建广告图片的父容器
      * @return RelativeLayout
@@ -377,6 +400,13 @@ public class SplashScreen extends CordovaPlugin {
         btn.setPadding(10,10,10,10);
         btn.setText("跳过");
         btn.setBackgroundColor(Color.TRANSPARENT);
+        btn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+
+                removeSplashScreen(true);
+            }
+        });
         layout.addView(btn,params);
     }
 
@@ -425,5 +455,52 @@ public class SplashScreen extends CordovaPlugin {
                 }
             }
         });
+    }
+
+    /**
+     * 根据文件名称判断广告是否在有效期内
+     * @param fileName
+     * @return
+     */
+    private boolean isAvailable(String fileName){
+        String[] ss=fileName.split("_");
+        //如果图片名称没有带有效时间端参数，就直接显示图片
+        if(ss.length==1)return true;
+        try {
+            long startTime=Long.parseLong(ss[1]);
+            long endTime=Long.parseLong(ss[2]);
+            Date now=new Date();
+            if(now.getTime()<endTime&&now.getTime()>startTime)return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    /**
+     * 创建倒计时
+     * @param layout
+     */
+    private void makeSeconds(RelativeLayout layout,int seconds){
+        TextView lable=new TextView(webView.getContext());
+        lable.setText(seconds+"s");
+        lable.setTextSize(20);
+        lable.setTextColor(Color.WHITE);
+        lable.setPadding(20,15,10,10);
+        layout.addView(lable);
+        startCountdown((seconds+1)*1000,lable);
+    }
+    private void startCountdown(int millis , final TextView lable){
+        new CountDownTimer(millis,1000){
+
+            @Override
+            public void onTick(long millisUntilFinished) {
+                lable.setText((millisUntilFinished/1000)+"s");
+            }
+
+            @Override
+            public void onFinish() {
+            }
+        }.start();
     }
 }
