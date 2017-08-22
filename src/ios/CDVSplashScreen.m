@@ -340,12 +340,12 @@ NSTimer* _timer;
     {
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
         NSString *path = [[paths objectAtIndex:0] stringByAppendingString:@"/ads"];
-        NSString *imageName=@"ad.jp";
+        NSString *adImageName=@"ad.jp";
         NSArray *directory=[[NSFileManager defaultManager] contentsOfDirectoryAtPath:path error:NULL];
         BOOL available=true;
         if(directory!=nil&&[directory count]>0){
-            imageName=[directory objectAtIndex:directory.count-1];
-            NSArray *ss=[imageName componentsSeparatedByString:@"_"];
+            adImageName=[directory objectAtIndex:directory.count-1];
+            NSArray *ss=[adImageName componentsSeparatedByString:@"_"];
             //设置显示时长
             if(sizeof(ss)>3) {
                 int draction=[[[[ss objectAtIndex:3] componentsSeparatedByString:@"."] objectAtIndex:0] intValue];
@@ -360,7 +360,7 @@ NSTimer* _timer;
             available=[self isAvailable:[[ss objectAtIndex:1] doubleValue] endTime:[[ss objectAtIndex:2] doubleValue]];
             
         }
-        path=[[path stringByAppendingString:@"/"] stringByAppendingString:imageName];
+        path=[[path stringByAppendingString:@"/"] stringByAppendingString:adImageName];
         [self checkFile:path];
         BOOL isExist= [[NSFileManager defaultManager] fileExistsAtPath:path];
         //检测广告图片文件是否存在
@@ -375,11 +375,13 @@ NSTimer* _timer;
                 _countdown.text=[[NSString stringWithFormat:@"%d",secondsLeft] stringByAppendingString:@"s"];
                 _timer= [NSTimer scheduledTimerWithTimeInterval:1.0f target:self selector:@selector(updateCounter:) userInfo:nil repeats:YES];
             }
+            
+         _curImageName = adImageName;
         }else{
             img=[UIImage imageNamed:imageName];
+         _curImageName = imageName;
         }
         _imageView.image = img;	
-        _curImageName = imageName;
     }
 
     // Check that splash screen's image exists before updating bounds
